@@ -1,4 +1,4 @@
-# truview — OpenShift learning project
+# truview — project
 
 FastAPI app built up in stages.
 
