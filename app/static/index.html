@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truview Clock</title>
+<style>
+  :root {
+    --page: #1b1c1e;
+    --bezel-hi: #3a3c40;
+    --bezel-lo: #202124;
+    --lcd: #a7b39a;
+    --lcd-edge: #8e9a82;
+    --seg-on: #1e2619;
+    --seg-off: rgba(30, 38, 25, 0.07);
+    --label: #8a8d93;
+    --link: #b7c2a8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at top, #26282b, var(--page) 70%);
+    color: var(--label);
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .device {
+    width: min(720px, 100%);
+    padding: clamp(14px, 3vw, 28px);
+    border-radius: 22px;
+    background: linear-gradient(160deg, var(--bezel-hi), var(--bezel-lo));
+    box-shadow: 0 30px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .brand {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    margin: 0 4px 12px;
+  }
+  .brand b { color: #c9ccd1; font-weight: 700; }
+
+  .lcd {
+    position: relative;
+    border-radius: 8px;
+    padding: clamp(12px, 3vw, 22px) clamp(14px, 4vw, 30px);
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.025) 0 1px, transparent 1px 3px),
+      linear-gradient(180deg, var(--lcd), var(--lcd-edge));
+    box-shadow: inset 0 3px 10px rgba(0,0,0,.45), inset 0 0 0 2px rgba(0,0,0,.25);
+    color: var(--seg-on);
+    overflow: hidden;
+  }
+  /* Glare across the glass */
+  .lcd::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: linear-gradient(115deg, rgba(255,255,255,.18), transparent 40%);
+    pointer-events: none;
+  }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ann {
+    font-size: clamp(9px, 1.8vw, 13px);
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--seg-off);
+    transition: color .15s;
+  }
+  .ann.on { color: var(--seg-on); }
+  .days { display: flex; gap: clamp(6px, 1.6vw, 14px); }
+  .flags { display: flex; gap: clamp(8px, 2vw, 16px); }
+
+  .main { display: flex; align-items: flex-end; justify-content: center; margin: clamp(8px, 2vw, 16px) 0; }
+  .digits { display: flex; align-items: flex-end; gap: clamp(3px, 1vw, 8px); }
+  .big .digit { width: clamp(42px, 11vw, 96px); }
+  .big .colon { width: clamp(12px, 3vw, 24px); }
+  .small { margin-left: clamp(6px, 1.5vw, 12px); }
+  .small .digit { width: clamp(22px, 5.5vw, 46px); }
+  .date .digit { width: clamp(18px, 4.4vw, 36px); }
+
+  svg { display: block; overflow: visible; }
+  .digit, .colon { transform: skewX(-6deg); }
+  .seg { fill: var(--seg-off); }
+  .seg.on { fill: var(--seg-on); filter: drop-shadow(1.5px 2px 0 rgba(0,0,0,.12)); }
+  .colon.blink .seg.on { fill: var(--seg-off); filter: none; }
+
+  .bottom { margin-top: clamp(8px, 2vw, 16px); }
+  .tz { font-size: clamp(11px, 2.2vw, 16px); font-weight: 700; letter-spacing: .12em; }
+
+  /* Call log: dot-matrix style text panel */
+  .log { margin-top: clamp(12px, 2.5vw, 20px); padding-top: clamp(10px, 2vw, 16px); padding-bottom: clamp(10px, 2vw, 16px); }
+  .log-head { margin-bottom: 8px; }
+  .log-title { font-size: clamp(10px, 2vw, 13px); font-weight: 700; letter-spacing: .14em; }
+  .log table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(10px, 2vw, 13px);
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-shadow: 1px 1.5px 0 rgba(0,0,0,.12);
+    font-variant-numeric: tabular-nums;
+  }
+  .log th {
+    text-align: left;
+    font-weight: 700;
+    text-shadow: none;
+    color: rgba(30, 38, 25, .45);
+    border-bottom: 2px solid rgba(30, 38, 25, .35);
+    padding: 0 12px 4px 0;
+  }
+  .log td {
+    padding: 4px 12px 4px 0;
+    border-bottom: 1px dashed rgba(30, 38, 25, .18);
+    white-space: nowrap;
+  }
+  .log .num { text-align: right; }
+  .log .agent { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .log tr.new td { animation: flash 1.6s steps(2, jump-none) 1; }
+  @keyframes flash {
+    from { background: var(--seg-on); color: var(--lcd); text-shadow: none; }
+    to   { background: transparent; }
+  }
+  .log .empty td { text-align: center; color: rgba(30, 38, 25, .45); padding: 14px 0; border: 0; }
+  @media (max-width: 520px) {
+    .log .col-client { display: none; }
+  }
+
+  footer {
+    margin-top: 18px;
+    font-size: 12px;
+    letter-spacing: .1em;
+  }
+  footer a { color: var(--link); text-decoration: none; margin: 0 8px; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div class="device">
+    <div class="brand"><b>Truview</b><span>LCD-24 Server Clock</span></div>
+    <div class="lcd">
+      <div class="row">
+        <div class="days" id="days"></div>
+        <div class="flags">
+          <span class="ann on">24H</span>
+          <span class="ann" id="sync">SYNC</span>
+          <span class="ann" id="err">ERR</span>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="digits big" id="hhmm"></div>
+        <div class="digits small" id="ss"></div>
+      </div>
+
+      <div class="row bottom">
+        <div class="digits date" id="date"></div>
+        <div class="tz" id="tz">---</div>
+      </div>
+    </div>
+
+    <div class="lcd log">
+      <div class="row log-head">
+        <span class="log-title">CALL LOG &middot; /DATETIME</span>
+        <div class="flags">
+          <span class="ann" id="log-count">LAST 0</span>
+          <span class="ann" id="log-err">ERR</span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>TIME</th>
+            <th class="col-client">CLIENT</th>
+            <th class="num">ST</th>
+            <th class="num">MS</th>
+            <th>AGENT</th>
+          </tr>
+        </thead>
+        <tbody id="log-rows">
+          <tr class="empty"><td colspan="5">NO CALLS YET</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <footer>
+    <a href="/datetime">/datetime</a>
+    <a href="/history">/history</a>
+    <a href="/docs">/docs</a>
+  </footer>
+
+<script>
+  // 7-segment geometry in a 60x110 box; hexagonal segments with thickness T
+  const T = 10;
+  const h = (x1, x2, y) =>
+    `${x1},${y} ${x1 + T/2},${y - T/2} ${x2 - T/2},${y - T/2} ${x2},${y} ${x2 - T/2},${y + T/2} ${x1 + T/2},${y + T/2}`;
+  const v = (x, y1, y2) =>
+    `${x},${y1} ${x + T/2},${y1 + T/2} ${x + T/2},${y2 - T/2} ${x},${y2} ${x - T/2},${y2 - T/2} ${x - T/2},${y1 + T/2}`;
+  const SEGMENTS = {
+    a: h(9, 51, 6),  g: h(9, 51, 55), d: h(9, 51, 104),
+    f: v(6, 9, 52),  b: v(54, 9, 52),
+    e: v(6, 58, 101), c: v(54, 58, 101),
+  };
+  const GLYPHS = {
+    "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc",
+    "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg",
+    "-": "g", " ": "",
+  };
+  const NS = "http://www.w3.org/2000/svg";
+
+  function makeDigit(parent) {
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 60 110");
+    svg.classList.add("digit");
+    const segs = {};
+    for (const [name, pts] of Object.entries(SEGMENTS)) {
+      const p = document.createElementNS(NS, "polygon");
+      p.setAttribute("points", pts);
+      p.classList.add("seg");
+      svg.appendChild(p);
+      segs[name] = p;
+    }
+    parent.appendChild(svg);
+    return ch => {
+      const lit = GLYPHS[ch] ?? "";
+      for (const [name, p] of Object.entries(segs)) p.classList.toggle("on", lit.includes(name));
+    };
+  }
+
+  function makeColon(parent) {
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 20 110");
+    svg.classList.add("colon");
+    for (const y of [32, 78]) {
+      const r = document.createElementNS(NS, "rect");
+      Object.entries({ x: 4, y: y - 6, width: 12, height: 12 }).forEach(([k, val]) => r.setAttribute(k, val));
+      r.classList.add("seg", "on");
+      svg.appendChild(r);
+    }
+    parent.appendChild(svg);
+    return svg;
+  }
+
+  // Build the display
+  const hhmmEl = document.getElementById("hhmm");
+  const hhmm = [makeDigit(hhmmEl), makeDigit(hhmmEl)];
+  const colon = makeColon(hhmmEl);
+  hhmm.push(makeDigit(hhmmEl), makeDigit(hhmmEl));
+
+  const ssEl = document.getElementById("ss");
+  const ss = [makeDigit(ssEl), makeDigit(ssEl)];
+
+  const dateEl = document.getElementById("date");
+  const date = Array.from({ length: 10 }, () => makeDigit(dateEl));
+
+  const DAYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+  const daysEl = document.getElementById("days");
+  const dayEls = DAYS.map(d => {
+    const s = document.createElement("span");
+    s.className = "ann";
+    s.textContent = d;
+    daysEl.appendChild(s);
+    return s;
+  });
+
+  const syncEl = document.getElementById("sync");
+  const errEl = document.getElementById("err");
+  const tzEl = document.getElementById("tz");
+
+  const show = (setters, text) => setters.forEach((set, i) => set(text[i] ?? " "));
+
+  let serverOffsetMin = 0;
+
+  function render(data) {
+    const m = data.datetime.match(/([+-])(\d{2}):(\d{2})$/);
+    serverOffsetMin = m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+    const [H, M, S] = data.time.split(":");
+    show(hhmm, H + M);
+    show(ss, S);
+    show(date, data.date);
+    const day = new Date(data.date + "T00:00:00").getDay();
+    dayEls.forEach((el, i) => el.classList.toggle("on", i === day));
+    tzEl.textContent = data.timezone;
+    colon.classList.toggle("blink", Number(S) % 2 === 1);
+    syncEl.classList.add("on");
+    errEl.classList.remove("on");
+  }
+
+  function renderError() {
+    show(hhmm, "----");
+    show(ss, "--");
+    show(date, "----------");
+    dayEls.forEach(el => el.classList.remove("on"));
+    tzEl.textContent = "---";
+    syncEl.classList.remove("on");
+    errEl.classList.add("on");
+  }
+
+  async function tick() {
+    try {
+      const res = await fetch("/datetime", {
+        cache: "no-store",
+        headers: { "X-Truview-Client": "lcd" },  // tells the server not to log these polls
+      });
+      if (!res.ok) throw new Error(res.status);
+      render(await res.json());
+    } catch {
+      renderError();
+    }
+    // Align the next poll just after the next whole second
+    setTimeout(tick, 1000 - (Date.now() % 1000) + 20);
+  }
+
+  // ---- Call log ----
+  const LOG_LIMIT = 10;
+  const logRows = document.getElementById("log-rows");
+  const logCount = document.getElementById("log-count");
+  const logErr = document.getElementById("log-err");
+  let lastSeenId = null;
+
+  // Show log timestamps in the server's timezone, same as the clock
+  function serverTime(ts) {
+    const utc = new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z");
+    const shifted = new Date(utc.getTime() + serverOffsetMin * 60000).toISOString();
+    return `${shifted.slice(5, 10)} ${shifted.slice(11, 19)}`;
+  }
+
+  function shortAgent(ua) {
+    if (!ua) return "-";
+    for (const [needle, name] of [["Edg/", "Edge"], ["Firefox/", "Firefox"], ["Chrome/", "Chrome"], ["Safari/", "Safari"]]) {
+      if (ua.includes(needle)) return name;
+    }
+    return ua.split(" ")[0];
+  }
+
+  function cell(text, className) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    if (className) td.className = className;
+    return td;
+  }
+
+  function renderLog(rows) {
+    logRows.replaceChildren();
+    if (rows.length === 0) {
+      const tr = document.createElement("tr");
+      tr.className = "empty";
+      const td = cell("NO CALLS YET");
+      td.colSpan = 5;
+      tr.appendChild(td);
+      logRows.appendChild(tr);
+    }
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      if (lastSeenId !== null && r.id > lastSeenId) tr.className = "new";
+      tr.append(
+        cell(serverTime(r.timestamp)),
+        cell(r.client_host ?? "-", "col-client"),
+        cell(r.status_code, "num"),
+        cell(r.duration_ms.toFixed(1), "num"),
+        cell(shortAgent(r.user_agent), "agent"),
+      );
+      tr.title = r.user_agent ?? "";
+      logRows.appendChild(tr);
+    }
+    lastSeenId = rows.length ? Math.max(lastSeenId ?? 0, rows[0].id) : lastSeenId ?? 0;
+    logCount.textContent = `LAST ${rows.length}`;
+    logCount.classList.toggle("on", rows.length > 0);
+    logErr.classList.remove("on");
+  }
+
+  async function pollLog() {
+    try {
+      const res = await fetch(`/history?limit=${LOG_LIMIT}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      renderLog(await res.json());
+    } catch {
+      logErr.classList.add("on");
+    }
+    setTimeout(pollLog, 5000);
+  }
+
+  renderError();
+  // Start the log after the first clock update so the server's UTC offset is known
+  tick().finally(pollLog);
+</script>
+</body>
+</html>
