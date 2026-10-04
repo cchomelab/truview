@@ -170,6 +170,7 @@
       <div class="row log-head">
         <span class="log-title">CALL LOG &middot; /DATETIME</span>
         <div class="flags">
+          <span class="ann" id="log-total">TOTAL 0</span>
           <span class="ann" id="log-count">LAST 0</span>
           <span class="ann" id="log-err">ERR</span>
         </div>
@@ -323,6 +324,7 @@
   const logRows = document.getElementById("log-rows");
   const logCount = document.getElementById("log-count");
   const logErr = document.getElementById("log-err");
+  const logTotal = document.getElementById("log-total");
   let lastSeenId = null;
 
   // Show log timestamps in the server's timezone, same as the clock
@@ -376,11 +378,25 @@
     logErr.classList.remove("on");
   }
 
+  // Total comes from the database, so it survives restarts when /data is persistent
+  function renderStats(stats) {
+    const since = stats.first_call ? ` SINCE ${serverTime(stats.first_call).slice(0, 11)}` : "";
+    logTotal.textContent = `TOTAL ${stats.total_calls}${since}`;
+    logTotal.title = stats.db_path;
+    logTotal.classList.toggle("on", stats.total_calls > 0);
+  }
+
+  async function getJson(url) {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    return res.json();
+  }
+
   async function pollLog() {
     try {
-      const res = await fetch(`/history?limit=${LOG_LIMIT}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(res.status);
-      renderLog(await res.json());
+      const [rows, stats] = await Promise.all([getJson(`/history?limit=${LOG_LIMIT}`), getJson("/stats")]);
+      renderLog(rows);
+      renderStats(stats);
     } catch {
       logErr.classList.add("on");
     }

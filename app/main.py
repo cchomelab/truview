@@ -1,3 +1,4 @@
+import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -7,9 +8,11 @@ from fastapi import FastAPI, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from app.db import RequestLog, add_request_log, init_db, recent_request_logs
+from app.db import RequestLog, add_request_log, init_db, recent_request_logs, request_log_stats
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+logger = logging.getLogger("uvicorn.error")
 
 LOGGED_PATHS = {"/datetime"}
 # The landing page tags its once-a-second polls with this header so they aren't logged.
@@ -41,8 +44,12 @@ async def log_requests(request: Request, call_next):
             user_agent=request.headers.get("user-agent"),
             duration_ms=round((time.perf_counter() - start) * 1000, 2),
         )
-        # SQLite calls block, so run them off the event loop
-        await run_in_threadpool(add_request_log, entry)
+        # SQLite calls block, so run them off the event loop. A logging failure
+        # shouldn't break the response the caller is waiting for.
+        try:
+            await run_in_threadpool(add_request_log, entry)
+        except Exception:
+            logger.exception("Failed to write request log entry")
     return response
 
 
@@ -65,6 +72,11 @@ def get_datetime():
 @app.get("/history", response_model=list[RequestLog])
 def history(limit: int = Query(50, ge=1, le=1000)):
     return recent_request_logs(limit)
+
+
+@app.get("/stats")
+def stats():
+    return request_log_stats()
 
 
 @app.get("/healthz")
